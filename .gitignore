@@ -1,0 +1,16 @@
+.venv/
+__pycache__/
+*.pyc
+.env
+data/
+logs/
+*.log
+.DS_Store
+.idea/
+.vscode/
+
+# 公众号专属二维码：内含 gh_xxx 公众号 ID
+static/*.jpg
+static/*.jpeg
+static/*.png
+!static/*.example.*
