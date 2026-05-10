@@ -173,4 +173,4 @@ rsync -av --exclude='.venv' --exclude='data' . user@host:~/wechat-passcode-login
 ssh user@host 'cd ~/wechat-passcode-login && uv sync && nohup sudo -E uv run python -m src.main > /tmp/wechat_passcode_login.log 2>&1 &'
 ```
 
-> 微信后台 URL 不接受 IP，需要至少一个域名（可用 nip.io 等伪域名服务测试）。
+> 微信后台 URL 支持 IP 直连，需开放 80 或 443 端口。
