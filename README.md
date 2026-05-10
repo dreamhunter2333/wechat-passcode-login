@@ -58,13 +58,6 @@ uv sync
 uv run python -m src.main
 ```
 
-### 部署
-
-```bash
-rsync -av --exclude='.venv' --exclude='data' . user@host:~/wechat-passcode-login/
-ssh user@host 'cd ~/wechat-passcode-login && uv sync && nohup sudo -E uv run python -m src.main > /tmp/wechat_passcode_login.log 2>&1 &'
-```
-
 ### API
 
 | Method | Path | 用途 |
