@@ -58,7 +58,7 @@ uv sync
 uv run python -m src.main
 ```
 
-### 部署示例（http :80 + IP 直连）
+### 部署
 
 ```bash
 rsync -av --exclude='.venv' --exclude='data' . user@host:~/wechat-passcode-login/
@@ -92,6 +92,8 @@ static/
   index.html       单文件前端（卡片 UI + 状态机 + 倒计时 + 自动刷新）
   qrcode.jpg       公众号二维码（gitignore，本地放）
 ```
+
+---
 
 ## 登录流程
 
@@ -134,13 +136,9 @@ sequenceDiagram
 
 ### 为什么是「关注 + 验证码」
 
-微信官方的"扫码登录"依赖 [带参二维码 `qrcode/create`](https://developers.weixin.qq.com/doc/service/api/qrcode/qrcodes/api_createqrcode.html)：
+微信官方的"扫码登录"依赖 [带参二维码 `qrcode/create`](https://developers.weixin.qq.com/doc/service/api/qrcode/qrcodes/api_createqrcode.html)，仅限认证服务号。未认证号调用返回 `errcode: 48001 api unauthorized`，`user/info`、`sns/userinfo` 等用户接口同理。
 
-> **本接口支持「服务号（仅认证）」账号类型调用。其他账号类型如无特殊说明，均不可调用。**
-
-未认证服务号 / 订阅号调用全部返回 `errcode: 48001 api unauthorized`。同样的限制还卡死了 `user/info`、`user/get`、网页授权 `sns/userinfo` 等几乎所有用户相关接口。
-
-**绕过路径**：用所有公众号都开放的两个接口拼一个登录方案：
+**绕过路径**：用所有公众号都开放的两个接口：
 
 | 接口 | 资质要求 | 用途 |
 |---|---|---|
@@ -149,25 +147,18 @@ sequenceDiagram
 
 代价：用户多一步「在公众号里把 6 位数字发出去」。但**对未认证号是唯一可行的方案**。
 
-### 验证码设计
-
-- **6 位纯数字**：100 万空间，手机端数字键盘友好
-- **TTL 300 秒**：覆盖从扫码到输码的耗时窗口
-- **一次性**：consume 后立即从可匹配池移除
-- **幂等签发**：scanned → `issued` 状态机锁防止前端轮询重复签发 cookie
-
-### session_id 与 code 的关系
+### session_id 与 code
 
 ```
 session_id (32B URL-safe 随机) ←→ code (6 位数字)
 ```
 
-- **session_id**：给浏览器轮询用，用户不可见，32 字节随机
-- **code**：给用户在微信里输入，必须短、必须纯数字
+- **session_id**：浏览器轮询用，用户不可见，32 字节随机
+- **code**：用户在微信里输入，6 位纯数字（100 万空间，手机键盘友好）
+- 两者解耦：code 可过期重生成，session 独立管理生命周期
+- TTL 300 秒，一次性消费，幂等签发（scanned → `issued` 防重复签发 cookie）
 
-两者解耦：code 可过期重生成，session 独立管理生命周期。
-
-### 状态机
+### 状态机与防爆破
 
 ```mermaid
 stateDiagram-v2
@@ -189,9 +180,7 @@ stateDiagram-v2
     }
 ```
 
-### 防爆破
-
-6 位 = 100 万空间，三层防御：
+三层防爆破：
 
 | 层 | 策略 | 实现 |
 |---|---|---|
@@ -201,7 +190,7 @@ stateDiagram-v2
 
 > 当前没做 IP 维度限速 + 全局速率。生产规模下应加：同 IP 1 分钟最多 N 次失败、全局每秒 consume 调用上限。
 
-### 安全要点
+### 安全设计
 
 - cookie：`HttpOnly` + 可配 `secure` / `samesite`；token 存 SHA-256 hash，不存原值
 - 同 openid 登录自动撤销旧 session（防多端冒用）
@@ -209,13 +198,8 @@ stateDiagram-v2
 - 签名校验用 `hmac.compare_digest` 防定时攻击
 - 安全模式 AES-CBC：解密后校验 `receive_id == app_id`
 
-### 为什么不用其他方案
-
-- **JWT**：无服务端撤销能力，token 过长不适合手输
-- **短链 redirect**：微信不支持未认证号的网页授权回调
-- **短信**：需短信通道资质 + 费用
-
 ### 局限
 
 - 登录后只有 `openid`，没有昵称/头像（`user/info` 需认证）
 - 想拿用户资料 → 需微信认证（¥300/年）→ 可改用 `qrcode/create` + `cgi-bin/user/info`
+- JWT 无服务端撤销能力且 token 过长不适合手输；短链 redirect 需未认证号没有的网页授权；短信需资质 + 费用
