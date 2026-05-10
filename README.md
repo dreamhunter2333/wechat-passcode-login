@@ -2,6 +2,54 @@
 
 微信公众号扫码口令登录 — 扫码关注公众号 + 发送 6 位验证码完成网页登录，不依赖微信认证服务号资质。
 
+## 架构
+
+```mermaid
+graph LR
+    Browser["浏览器<br/>index.html"] -->|HTTP| FastAPI["FastAPI<br/>main.py"]
+    FastAPI -->|SQLite| DB[("data/app.db<br/>SQLModel")]
+    WXServer["微信服务器"] -->|POST /wechat<br/>XML callback| FastAPI
+    FastAPI -->|XML reply| WXServer
+    User["用户手机"] -->|扫码关注 + 发验证码| WXServer
+    Browser -->|2s 轮询| FastAPI
+    FastAPI -->|HttpOnly cookie| Browser
+```
+
+## 登录流程
+
+```mermaid
+sequenceDiagram
+    participant B as 浏览器
+    participant S as FastAPI
+    participant WX as 微信服务器
+    participant U as 用户手机
+
+    B->>S: GET /login/start
+    S-->>B: {session_id, code(6位), ttl}
+
+    Note over B: 显示二维码 + 验证码 + 倒计时
+
+    U->>WX: 扫码关注公众号
+    WX->>S: POST /wechat (subscribe event)
+    S-->>WX: "请发验证码"
+    WX-->>U: 提示发送验证码
+
+    U->>WX: 发送 6 位数字
+    WX->>S: POST /wechat (text: 6位数字)
+    S->>S: consume(code, openid) → scanned
+    S-->>WX: "登录成功"
+    WX-->>U: 显示登录成功
+
+    loop 每 2 秒
+        B->>S: POST /login/status {session_id}
+    end
+    S-->>B: {status: "scanned"} + Set-Cookie
+
+    B->>S: GET /me
+    S-->>B: {openid, expires_at}
+    Note over B: 显示已登录，7 天滑动续期
+```
+
 ## 浏览器端流程
 
 ```
@@ -131,13 +179,24 @@ session_id (32B URL-safe 随机) ←→ code (6 位数字)
 
 ### 状态机
 
-```
-LoginSession.status:
-  pending  ──consume(code, openid)── scanned ──mark_issued()── issued
-                  ↓ 失败
-              FailCount++
-                  ↓ ≥5
-              拒绝该 openid 10 分钟
+```mermaid
+stateDiagram-v2
+    [*] --> pending: /login/start 创建
+
+    pending --> scanned: consume(code, openid)
+    pending --> [*]: TTL 300s 过期
+
+    scanned --> issued: mark_issued() 幂等签发
+
+    state consume失败 <<choice>>
+    pending --> consume失败: code 不匹配
+    consume失败 --> pending: FailCount < 5
+    consume失败 --> locked: FailCount ≥ 5
+
+    state locked {
+        [*] --> 等待10分钟
+        等待10分钟 --> [*]: GC 清除 FailCount
+    }
 ```
 
 ### 防爆破
