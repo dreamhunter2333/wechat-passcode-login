@@ -15,51 +15,6 @@ graph LR
     FastAPI -->|HttpOnly cookie| Browser
 ```
 
-## 登录流程
-
-```mermaid
-sequenceDiagram
-    participant B as 浏览器
-    participant S as FastAPI
-    participant WX as 微信服务器
-    participant U as 用户手机
-
-    B->>S: GET /login/start
-    S-->>B: {session_id, code(6位), ttl}
-
-    Note over B: 显示二维码 + 验证码 + 倒计时
-
-    U->>WX: 扫码关注公众号
-    WX->>S: POST /wechat (subscribe event)
-    S-->>WX: "请发验证码"
-    WX-->>U: 提示发送验证码
-
-    U->>WX: 发送 6 位数字
-    WX->>S: POST /wechat (text: 6位数字)
-    S->>S: consume(code, openid) → scanned
-    S-->>WX: "登录成功"
-    WX-->>U: 显示登录成功
-
-    loop 每 2 秒
-        B->>S: POST /login/status {session_id}
-    end
-    S-->>B: {status: "scanned"} + Set-Cookie
-
-    B->>S: GET /me
-    S-->>B: {openid, expires_at}
-    Note over B: 显示已登录，7 天滑动续期
-```
-
-## 浏览器端流程
-
-```
-1. 浏览器打开 /                   → 显示公众号二维码 + 6 位验证码 + 倒计时
-2. 用户微信扫码 → 关注公众号       → 公众号回复"请发验证码"
-3. 用户在公众号给该号发 6 位数字   → 服务收到 callback，匹配 code
-4. 网页轮询 /login/status → scanned → 调 /me → 显示已登录
-5. 浏览器拿到 HttpOnly cookie，刷新页面仍登录，TTL 7 天滑动续期
-```
-
 ---
 
 ## 使用
@@ -136,6 +91,41 @@ src/
 static/
   index.html       单文件前端（卡片 UI + 状态机 + 倒计时 + 自动刷新）
   qrcode.jpg       公众号二维码（gitignore，本地放）
+```
+
+## 登录流程
+
+```mermaid
+sequenceDiagram
+    participant B as 浏览器
+    participant S as FastAPI
+    participant WX as 微信服务器
+    participant U as 用户手机
+
+    B->>S: GET /login/start
+    S-->>B: {session_id, code(6位), ttl}
+
+    Note over B: 显示二维码 + 验证码 + 倒计时
+
+    U->>WX: 扫码关注公众号
+    WX->>S: POST /wechat (subscribe event)
+    S-->>WX: "请发验证码"
+    WX-->>U: 提示发送验证码
+
+    U->>WX: 发送 6 位数字
+    WX->>S: POST /wechat (text: 6位数字)
+    S->>S: consume(code, openid) → scanned
+    S-->>WX: "登录成功"
+    WX-->>U: 显示登录成功
+
+    loop 每 2 秒
+        B->>S: POST /login/status {session_id}
+    end
+    S-->>B: {status: "scanned"} + Set-Cookie
+
+    B->>S: GET /me
+    S-->>B: {openid, expires_at}
+    Note over B: 显示已登录，7 天滑动续期
 ```
 
 ---
